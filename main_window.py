@@ -1,9 +1,9 @@
-import sys
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
 # from db_helper import DB, DB_CONFIG
 from date_data_window import date_data_window
+from waiting_dialog import WaitingDialog
 
 class MainWindow(QMainWindow):
     def __init__(self, db_instance):
@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
                       "border-radius: 30px")
 
         
-        self.watering_btn = QPushButton('급수')
+        self.watering_btn = QPushButton('물 주기')
         self.watering_btn.setStyleSheet("color: white;"
                       "background-color: #1E88E5;"
                       "border-style: solid;"
@@ -109,11 +109,25 @@ class MainWindow(QMainWindow):
         self.watering_btn.setEnabled(False)
         self.watering_btn.toggled.connect(self.watering)
 
+        self.fill_tank_btn = QPushButton('수조 탱크 채우기')
+        self.fill_tank_btn.setStyleSheet("color: white;"
+                      "background-color: #1E88E5;"
+                      "border-style: solid;"
+                      "border-width: 2px;"
+                      "border-color: #03A9F4;"
+                      "border-radius: 10px")
+        self.fill_tank_btn.setFixedSize(200, 60)
+        self.fill_tank_btn.setCheckable(True)
+        self.fill_tank_btn.setEnabled(False)
+        self.fill_tank_btn.toggled.connect(self.fill_tank)
+
         btn_center_layout = QHBoxLayout()
         btn_center_layout.addStretch(1)
         btn_center_layout.addWidget(self.buzzer)
         btn_center_layout.addStretch(1)
         btn_center_layout.addWidget(self.watering_btn)
+        btn_center_layout.addStretch(1)
+        btn_center_layout.addWidget(self.fill_tank_btn)
         btn_center_layout.addStretch(1)
         
         self.table = QTableWidget()
@@ -133,11 +147,24 @@ class MainWindow(QMainWindow):
         vbox.addLayout(btn_center_layout)
 
         self.load_data()
-
         self.timer = QTimer(self)
-        self.timer.setInterval(2000)
+        self.timer.setInterval(30000)
         self.timer.timeout.connect(self.read_arduino_data)
         self.timer.start()
+
+        self.is_connect_with_device = False  # 첫 유효 데이터 수신 여부
+        self.waitdlg = None
+
+        # 시리얼이 열려 있고 아직 연결 확인 전이라면 대기창 표시
+        if self.db.ser and self.db.ser.is_open:
+            def on_wifi_timeout():
+                # 타임아웃 처리: 상태바 문구 업데이트 및 알림
+                self.flag_label.setText("Wi-Fi 연결 실패(타임아웃). 장치를 확인하세요.  ")
+                QMessageBox.warning(self, "연결 실패", "Wi-Fi 연결 신호를 받지 못했습니다.\n장치/전원을 확인해 주세요.")
+            self.waitdlg = WaitingDialog("날씨 정보 받아오는중...", timeout_ms=30000, on_timeout=on_wifi_timeout, parent=self)
+            self.waitdlg.start()
+        else:
+            self.flag_label.setText("장치 포트 미연결. USB/포트를 확인하세요.")
 
     def load_data(self):
         rows = self.db.fetch_data()
@@ -173,17 +200,17 @@ class MainWindow(QMainWindow):
         else:
             self.hum_label.setStyleSheet("background-color: #F08080;")
 
-        if lastest_smo < 40:
+        if lastest_smo < 50:
             self.smo_label.setStyleSheet("background-color: #F08080;")
         else:
             self.smo_label.setStyleSheet("background-color: #90EE90;")
 
         if lastest_wlev < 20:
-            self.wlev_label.setStyleSheet("background-color: #90EE90;")
-        else:
             self.wlev_label.setStyleSheet("background-color: #F08080;")
+        else:
+            self.wlev_label.setStyleSheet("background-color: #90EE90;")
 
-        if lastest_smo < 40 :
+        if lastest_smo < 50:
             self.buzzer.setStyleSheet("color: white;"
                       "background-color: #ff0000 ;"
                       "border-style: solid;"
@@ -224,7 +251,7 @@ class MainWindow(QMainWindow):
             else:
                 self.table.item(r, 2).setBackground(QColor('#98FB98'))
 
-            if smo < 40:
+            if smo < 50:
                 self.table.item(r, 3).setBackground(QColor('#FFC0CB'))
             else:
                 self.table.item(r, 3).setBackground(QColor('#98FB98'))
@@ -235,36 +262,41 @@ class MainWindow(QMainWindow):
     def read_arduino_data(self):
         if self.db.ser and self.db.ser.is_open:
             try:
-                line = self.db.ser.readline().decode('utf-8').strip()
-                if line:
-                    print(f"아두이노에서 수신: {line}")
-                    
-                    parts = line.split(',')
-                    if len(parts) == 4 and not self.is_connect_with_device:
-                        self.is_connect_with_device = True
-                        print("드디어 정상적으로 값이 오기 시작했다!")
-                        self.flag_label.setText("")
-                    else :
-                        return
+                line = self.db.ser.readline().decode('utf-8', errors='ignore').strip()
+                if not line:
+                    return
 
-                    temperature = parts[0]
-                    humidity = parts[1]
-                    water_level = parts[2]
-                    soil_moisture = parts[3]
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) != 4: # <
+                     return
 
-                    if all(v is not None for v in [temperature, humidity, water_level, soil_moisture]):
-                        self.db.save_sensor_data(temperature, humidity, water_level, soil_moisture)
-                        self.load_data()
-                    else:
-                        print(f"수신된 데이터 파싱 오류: {line}")
-                
+                # === 첫 정상 수신 시: 대기창 닫기 ===
+                if not self.is_connect_with_device:
+                    self.is_connect_with_device = True
+                    self.flag_label.setText("")  # str(weather)
+                    if self.waitdlg and self.waitdlg.isVisible():
+                        self.waitdlg.close_when_done()
+
+                # 문자열 -> 숫자
+                temperature = float(parts[0])
+                humidity = float(parts[1])
+                water_level = float(parts[2])
+                soil_moisture = float(parts[3])
+                # weather = float(parts[4])
+
+                # DB 저장 + 화면 갱신
+                self.db.save_sensor_data(temperature, humidity, water_level, soil_moisture)
+                self.load_data()
+
             except Exception as e:
                 print(f"시리얼 데이터 읽기 오류: {e}")
         else:
             print("아두이노 시리얼 포트가 연결되지 않았습니다.")
 
+
     def auto_mode(self):
         self.watering_btn.setEnabled(False)
+        self.fill_tank_btn.setEnabled(False)
         self.mode_label.setText('    자동 모드    ')
         print('자동 모드 on')
         if self.db.ser and self.db.ser.is_open:
@@ -272,6 +304,7 @@ class MainWindow(QMainWindow):
 
     def manual_mode(self):
         self.watering_btn.setEnabled(True)
+        self.fill_tank_btn.setEnabled(True)
         self.mode_label.setText('    수동 모드    ')
         print('수동 모드 on')
         if self.db.ser and self.db.ser.is_open:
@@ -305,12 +338,43 @@ class MainWindow(QMainWindow):
                 print(f"아두이노 급수 명령 전송 실패: {e}")
         else:
             print("아두이노 시리얼 포트가 연결되지 않아 급수 명령을 보낼 수 없습니다.")
+        
+    def fill_tank(self):
+        if self.fill_tank_btn.isChecked():
+            self.fill_tank_btn.setStyleSheet("color: white;"
+                      "background-color: #00BCD4;"
+                      "border-style: solid;"
+                      "border-width: 2px;"
+                      "border-color: #4DD0E1;"
+                      "border-radius: 3px")
+        else:
+            self.fill_tank_btn.setStyleSheet("color: white;"
+                      "background-color: #1E88E5;"
+                      "border-style: solid;"
+                      "border-width: 2px;"
+                      "border-color: #03A9F4;"
+                      "border-radius: 3px")
+
+        if self.db.ser and self.db.ser.is_open:
+            try:
+                if self.fill_tank_btn.isChecked(): # 버튼이 켜진 상태 (급수 시작)
+                    self.db.ser.write(b'W2\n') # 'W2' (급수 시작) 명령 전송
+                    print("아두이노에 급수 시작 명령 전송: W2")
+                else: # 버튼이 꺼진 상태 (급수 중지)
+                    self.db.ser.write(b'W3\n') # 'W3' (급수 중지) 명령 전송
+                    print("아두이노에 급수 중지 명령 전송: W3")
+            except Exception as e:
+                print(f"아두이노 급수 명령 전송 실패: {e}")
+        else:
+            print("아두이노 시리얼 포트가 연결되지 않아 급수 명령을 보낼 수 없습니다.")
             
     def open_date_data_window(self):
         date = self.calender.selectedDate().toString(Qt.ISODate)
         self.date_data_dialog = date_data_window(date=date, db_instance=self.db)
         self.date_data_dialog.accepted.connect(self.load_data)
         self.date_data_dialog.exec_()
+
+     
         
 
 # if __name__ == "__main__" :

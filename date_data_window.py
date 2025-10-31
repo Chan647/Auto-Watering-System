@@ -20,13 +20,17 @@ class date_data_window(QDialog):
 
         self.table = QTableWidget()
         self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(['온도', '습도', '토양 습도', '급수탱크 수위', '측정 시각'])
+        self.table.setHorizontalHeaderLabels(['온도', '습도', '급수탱크 수위', '토양 습도', '측정 시각'])
         self.table.setEditTriggers(self.table.NoEditTriggers)
         self.table.verticalHeader().setVisible(False)
 
         layout.addWidget(self.table)
 
         self.show_date_data()
+        self.timer = QTimer(self)
+        self.timer.setInterval(30000)
+        self.timer.timeout.connect(self.show_date_data)
+        self.timer.start()
 
     def show_date_data(self):
         rows = self.db.fetch_date_data(self.date)
@@ -34,8 +38,8 @@ class date_data_window(QDialog):
         for r, (tem, hum, smo, wlev, created_time) in enumerate(rows):
             self.table.setItem(r, 0, QTableWidgetItem(str(tem)))
             self.table.setItem(r, 1, QTableWidgetItem(str(hum)))
-            self.table.setItem(r, 2, QTableWidgetItem(str(smo)))
-            self.table.setItem(r, 3, QTableWidgetItem(str(wlev)))
+            self.table.setItem(r, 2, QTableWidgetItem(str(wlev)))
+            self.table.setItem(r, 3, QTableWidgetItem(str(smo)))
             self.table.setItem(r, 4, QTableWidgetItem(str(created_time)))
 
             if tem < 25:
@@ -52,7 +56,7 @@ class date_data_window(QDialog):
             else:
                 self.table.item(r, 1).setBackground(QColor('#FFC0CB'))
 
-            if smo < 40:
+            if smo < 50:
                 self.table.item(r, 2).setBackground(QColor('#FFC0CB'))
             else:
                 self.table.item(r, 2).setBackground(QColor('#98FB98'))

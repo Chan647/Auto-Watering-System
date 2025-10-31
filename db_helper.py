@@ -68,17 +68,15 @@ class DB:
             print(f"데이터 저장 실패: {e}")
             return False
     
-    
-
     def fetch_data(self):
-        sql = 'SELECT temperature, humidity, water_level, soil_moisture, created_time FROM sensor_data ORDER BY id DESC'
+        sql = 'SELECT temperature, humidity, water_level, soil_moisture, created_time FROM sensor_data ORDER BY id DESC LIMIT 10'
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql)
                 return cur.fetchall()
 
     def fetch_date_data(self, sel_date):
-        sql = 'SELECT temperature, humidity, water_level, soil_moisture, created_time FROM sensor_data WHERE DATE(created_time) = %s ORDER BY created_time'
+        sql = 'SELECT temperature, humidity, water_level, soil_moisture, created_time FROM sensor_data WHERE DATE(created_time) = %s ORDER BY id DESC'
         with self.connect() as conn:
             with conn.cursor() as cur:
                 cur.execute(sql, sel_date)
