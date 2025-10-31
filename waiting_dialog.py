@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar
 from PyQt5.QtCore import Qt, QTimer
 
 class WaitingDialog(QDialog):
-    def __init__(self, text="날씨 정보를 받아오는중...", timeout_ms=30000, on_timeout=None, parent=None):
+    def __init__(self, text="아두이노 wifi 연결중...", timeout_ms=30000, on_timeout=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("연결 상태")
         # 닫기 버튼/최소화 등 제거 + 항상 위 + 모달

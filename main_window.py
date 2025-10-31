@@ -1,15 +1,14 @@
 from PyQt5.QtWidgets import *
 from PyQt5.QtGui import *
 from PyQt5.QtCore import *
-# from db_helper import DB, DB_CONFIG
 from date_data_window import date_data_window
 from waiting_dialog import WaitingDialog
 
 class MainWindow(QMainWindow):
     def __init__(self, db_instance):
         super().__init__()
-        # self.db = DB(**DB_CONFIG)
         self.is_connect_with_device = False
+        self.tomorrow_weather = None
         self.db = db_instance
         self.setWindowTitle('스마트팜 모니터링')
 
@@ -55,10 +54,13 @@ class MainWindow(QMainWindow):
         date_string = current_date.toString(Qt.ISODate)
         date_label.setText(date_string)
 
+        # 날씨 라벨 추가 (상태바에)
+        self.weather_label = QLabel('날씨: 확인 중...')
         
         self.flag_label = QLabel()
-        self.flag_label.setText("아직 기기와 연결되지 않았습니다.")
+        self.flag_label.setText("아두이노 wifi 연결중...")
 
+        statusBar.addPermanentWidget(self.weather_label, 0)
         statusBar.addPermanentWidget(date_label, 0)
         statusBar.addPermanentWidget(self.flag_label, 0)
 
@@ -147,24 +149,51 @@ class MainWindow(QMainWindow):
         vbox.addLayout(btn_center_layout)
 
         self.load_data()
+        # 센서 데이터 읽기 타이머 (30초마다)
         self.timer = QTimer(self)
-        self.timer.setInterval(30000)
+        self.timer.setInterval(2000)
         self.timer.timeout.connect(self.read_arduino_data)
         self.timer.start()
 
-        self.is_connect_with_device = False  # 첫 유효 데이터 수신 여부
+        # 초기 날씨 정보 가져오기
+        self.update_weather()
+        # 날씨 업데이트 타이머 (1시간마다)
+        self.weather_timer = QTimer(self)
+        self.weather_timer.setInterval(3600000)  # 1시간
+        self.weather_timer.timeout.connect(self.update_weather)
+        self.weather_timer.start()
+
+        # 초기 날씨 정보 가져오기
+        self.update_weather()
+
+        self.load_data()
+        self.is_connect_with_device = False
         self.waitdlg = None
 
         # 시리얼이 열려 있고 아직 연결 확인 전이라면 대기창 표시
         if self.db.ser and self.db.ser.is_open:
             def on_wifi_timeout():
-                # 타임아웃 처리: 상태바 문구 업데이트 및 알림
-                self.flag_label.setText("Wi-Fi 연결 실패(타임아웃). 장치를 확인하세요.  ")
-                QMessageBox.warning(self, "연결 실패", "Wi-Fi 연결 신호를 받지 못했습니다.\n장치/전원을 확인해 주세요.")
-            self.waitdlg = WaitingDialog("날씨 정보 받아오는중...", timeout_ms=30000, on_timeout=on_wifi_timeout, parent=self)
+                self.flag_label.setText("장치 연결 실패(타임아웃). 장치를 확인하세요.")
+                QMessageBox.warning(self, "연결 실패", "아두이노 연결 신호를 받지 못했습니다.\n장치/전원을 확인해 주세요.")
+            self.waitdlg = WaitingDialog("아두이노 wifi 연결 대기 중...", timeout_ms=30000, on_timeout=on_wifi_timeout, parent=self)
             self.waitdlg.start()
         else:
             self.flag_label.setText("장치 포트 미연결. USB/포트를 확인하세요.")
+
+    def update_weather(self):
+        """날씨 정보 업데이트"""
+        weather = self.db.get_weather()
+        if weather:
+            self.weather_label.setText(f"날씨: {weather['description']} ({weather['temperature']:.1f}°C)")
+            
+            # 비가 오면 상태바에 알림 표시만 (아두이노에는 전송 안 함)
+            if weather['is_raining']:
+                self.weather_label.setText("☔ 비가 오고 있습니다")
+            else:
+                if self.is_connect_with_device:
+                    self.weather_label.setText(f"☀ {weather['description']}")
+        else:
+            self.weather_label.setText('날씨: 정보 없음')
 
     def load_data(self):
         rows = self.db.fetch_data()
@@ -205,7 +234,7 @@ class MainWindow(QMainWindow):
         else:
             self.smo_label.setStyleSheet("background-color: #90EE90;")
 
-        if lastest_wlev < 20:
+        if lastest_wlev <= 20:
             self.wlev_label.setStyleSheet("background-color: #F08080;")
         else:
             self.wlev_label.setStyleSheet("background-color: #90EE90;")
@@ -246,7 +275,7 @@ class MainWindow(QMainWindow):
             else:
                 self.table.item(r, 1).setBackground(QColor('#FFC0CB'))
 
-            if wlev < 20:
+            if wlev <= 20:
                 self.table.item(r, 2).setBackground(QColor('#FFC0CB'))
             else:
                 self.table.item(r, 2).setBackground(QColor('#98FB98'))
@@ -265,28 +294,41 @@ class MainWindow(QMainWindow):
                 line = self.db.ser.readline().decode('utf-8', errors='ignore').strip()
                 if not line:
                     return
+                
+                if line.startswith("TOMORROW WEATHER :"):
+                    # 날씨 정보 (처음 한 번만)
+                    weather = line.replace("TOMORROW WEATHER :", "").strip()
+                    self.tomorrow_weather = weather
+                    return
+                elif line.startswith("DATA :"):
+                    # 센서 데이터 (계속 받음)
+                    data_str = line.replace("DATA :", "").strip()
+                    parts = [p.strip() for p in data_str.split(',')]
+                    if len(parts) != 4:
+                        return
 
-                parts = [p.strip() for p in line.split(',')]
-                if len(parts) != 4: # <
-                     return
+                    # 첫 정상 수신 시: 대기창 닫기
+                    if not self.is_connect_with_device:
+                        self.is_connect_with_device = True
+                        # 날씨 정보가 있으면 표시
+                        weather = self.db.get_weather()
+                        if weather:
+                            self.flag_label.setText("")
+                        
+                        if self.waitdlg and self.waitdlg.isVisible():
+                            self.waitdlg.close_when_done()
 
-                # === 첫 정상 수신 시: 대기창 닫기 ===
-                if not self.is_connect_with_device:
-                    self.is_connect_with_device = True
-                    self.flag_label.setText("")  # str(weather)
-                    if self.waitdlg and self.waitdlg.isVisible():
-                        self.waitdlg.close_when_done()
+                        QMessageBox.information(self, "연결 성공", f'아두이노 연결 완료!\n내일 날씨: {self.tomorrow_weather}')
 
-                # 문자열 -> 숫자
-                temperature = float(parts[0])
-                humidity = float(parts[1])
-                water_level = float(parts[2])
-                soil_moisture = float(parts[3])
-                # weather = float(parts[4])
+                    # 문자열 -> 숫자
+                    temperature = float(parts[0])
+                    humidity = float(parts[1])
+                    water_level = float(parts[2])
+                    soil_moisture = float(parts[3])
 
-                # DB 저장 + 화면 갱신
-                self.db.save_sensor_data(temperature, humidity, water_level, soil_moisture)
-                self.load_data()
+                    # DB 저장 + 화면 갱신
+                    self.db.save_sensor_data(temperature, humidity, water_level, soil_moisture)
+                    self.load_data()
 
             except Exception as e:
                 print(f"시리얼 데이터 읽기 오류: {e}")
@@ -328,11 +370,11 @@ class MainWindow(QMainWindow):
         
         if self.db.ser and self.db.ser.is_open:
             try:
-                if self.watering_btn.isChecked(): # 버튼이 켜진 상태 (급수 시작)
-                    self.db.ser.write(b'W1\n') # 'W1' (급수 시작) 명령 전송
+                if self.watering_btn.isChecked():
+                    self.db.ser.write(b'W1\n')
                     print("아두이노에 급수 시작 명령 전송: W1")
-                else: # 버튼이 꺼진 상태 (급수 중지)
-                    self.db.ser.write(b'W0\n') # 'W0' (급수 중지) 명령 전송
+                else:
+                    self.db.ser.write(b'W0\n')
                     print("아두이노에 급수 중지 명령 전송: W0")
             except Exception as e:
                 print(f"아두이노 급수 명령 전송 실패: {e}")
@@ -357,11 +399,11 @@ class MainWindow(QMainWindow):
 
         if self.db.ser and self.db.ser.is_open:
             try:
-                if self.fill_tank_btn.isChecked(): # 버튼이 켜진 상태 (급수 시작)
-                    self.db.ser.write(b'W2\n') # 'W2' (급수 시작) 명령 전송
+                if self.fill_tank_btn.isChecked():
+                    self.db.ser.write(b'W2\n')
                     print("아두이노에 급수 시작 명령 전송: W2")
-                else: # 버튼이 꺼진 상태 (급수 중지)
-                    self.db.ser.write(b'W3\n') # 'W3' (급수 중지) 명령 전송
+                else:
+                    self.db.ser.write(b'W3\n')
                     print("아두이노에 급수 중지 명령 전송: W3")
             except Exception as e:
                 print(f"아두이노 급수 명령 전송 실패: {e}")
@@ -373,12 +415,3 @@ class MainWindow(QMainWindow):
         self.date_data_dialog = date_data_window(date=date, db_instance=self.db)
         self.date_data_dialog.accepted.connect(self.load_data)
         self.date_data_dialog.exec_()
-
-     
-        
-
-# if __name__ == "__main__" :
-#     app = QApplication(sys.argv) 
-#     myWindow = MainWindow() 
-#     myWindow.show()
-#     app.exec_()

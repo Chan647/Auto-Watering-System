@@ -28,7 +28,7 @@ class date_data_window(QDialog):
 
         self.show_date_data()
         self.timer = QTimer(self)
-        self.timer.setInterval(30000)
+        self.timer.setInterval(2000)
         self.timer.timeout.connect(self.show_date_data)
         self.timer.start()
 
@@ -61,7 +61,7 @@ class date_data_window(QDialog):
             else:
                 self.table.item(r, 2).setBackground(QColor('#98FB98'))
 
-            if wlev < 20:
+            if wlev <= 20:
                 self.table.item(r, 3).setBackground(QColor('#FFC0CB'))
             else:
                 self.table.item(r, 3).setBackground(QColor('#98FB98'))

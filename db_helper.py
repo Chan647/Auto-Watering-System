@@ -2,6 +2,7 @@ import pymysql
 import serial
 import serial.tools.list_ports
 import datetime
+import requests
 
 DB_CONFIG = dict(
     host = 'localhost',
@@ -17,6 +18,8 @@ class DB:
         print("DB 연결됨:", config)
 
         self.ser = None
+        self.api_key = "803d087ba957880e946afca96308e974"
+        self.city = "Daejeon,KR"  # 대전으로 변경 (원하는 도시로 수정 가능)
 
         try:
             ports = serial.tools.list_ports.comports()
@@ -81,3 +84,43 @@ class DB:
             with conn.cursor() as cur:
                 cur.execute(sql, sel_date)
                 return cur.fetchall()
+    
+    def get_weather(self):
+        """현재 날씨 정보 가져오기"""
+        try:
+            url = f"http://api.openweathermap.org/data/2.5/weather?q={self.city}&appid={self.api_key}&units=metric&lang=kr"
+            response = requests.get(url, timeout=10)
+            
+            if response.status_code == 200:
+                data = response.json()
+                weather_main = data['weather'][0]['main']
+                weather_desc = data['weather'][0]['description']
+                temp = data['main']['temp']
+                
+                # 날씨 설명을 좀 더 이해하기 쉽게 변환
+                weather_map = {
+                    '박무': '안개',
+                    '실안개': '안개',
+                    '연무': '실안개',
+                    '황사': '미세먼지',
+                    '안개': '안개',
+                    '옅은 안개': '안개',
+                    '실 안개': '안개'
+                }
+                
+                display_desc = weather_map.get(weather_desc, weather_desc)
+                
+                print(f"날씨: {display_desc}, 온도: {temp}°C")
+                return {
+                    'main': weather_main,
+                    'description': display_desc,
+                    'temperature': temp,
+                    'is_raining': weather_main.lower() == 'rain'
+                }
+            else:
+                print(f"날씨 API 오류: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            print(f"날씨 정보 가져오기 실패: {e}")
+            return None
