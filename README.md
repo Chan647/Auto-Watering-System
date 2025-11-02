@@ -44,7 +44,7 @@
 
 | PyQt GUI | 회로도 |
 |-----------|----------|
-| ![gui](images/gui.png) | ![circuit](images/circuit.png) |
+| ![gui](.C:\Users\cksgm\OneDrive\바탕 화면\취업 or 면접\활동\Auto_watering_system\Auto-Watering-System/GUI.png) | ![circuit](circuit_diagram.png) |
 
 
 ---
