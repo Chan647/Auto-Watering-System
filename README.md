@@ -11,14 +11,14 @@
 
 ---
 
-## 🧩 포함된 프로젝트
+## 🧩  프로젝트
 
-| 프로젝트명 | 주요 기능 | 핵심 기술 |
+| 기술 이름  | 주요 기능 | 핵심 기술 |
 |:------------|:------------|:------------|
 | 🌱 **Auto Watering System** | 토양 수분이 일정 이하일 때 **자동 급수**, LCD에 **온습도 표시** | Arduino, DHT11, Soil Sensor, L9110, Water Pump |
 | ☁️ **Weather Station** | **ESP-01 Wi-Fi**로 **OpenWeather API** 연결, **내일 날씨 정보** 획득 | Arduino + ESP-01, API 통신 |
 | 📊 **Data Logger** | **시리얼 데이터 실시간 수집**, PyQt 그래프 시각화 | Python, PyQt5, Serial |
-| 🌾 **Smart Farm Monitor** | LCD에 **온도, 습도, 수위, 토양 수분** 표시 | Arduino, LCD I2C 16x2, DHT11, Soil & Water Sensor |
+| 🌾 **Real-time monitoring** | LCD에 **온도, 습도, 수위, 토양 수분** 표시 | Arduino, LCD I2C 16x2, DHT11, Soil & Water Sensor |
 
 ---
 
